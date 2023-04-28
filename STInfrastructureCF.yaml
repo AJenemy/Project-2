@@ -358,113 +358,110 @@ Resources:
           FromPort: 80
           ToPort: 80
 
-
-  AWSTemplateFormatVersion: 2010-09-09
-Resources:
-  myLaunchTemplate:
+  StormTroopersLaunchTemplate:
     Type: 'AWS::EC2::LaunchTemplate'
     Properties:
       LaunchTemplateName: !Sub '${AWS::StackName}-launch-template-for-auto-scaling'
       LaunchTemplateData:
-        NetworkInterfaces:
-          - DeviceIndex: 0
-            AssociatePublicIpAddress: true
-            Groups:
-              - sg-09ac3fa57661cd3ea
-            DeleteOnTermination: true
-        Placement:
-          Tenancy: dedicated
-        ImageId: ami-02396cdd13e9a1257
-        InstanceType: t3.micro
-        KeyName: afriend
- 
+          IamInstanceProfile: 
+            Arn: arn:aws:iam::176906365059:instance-profile/StormTroopers-Project2-Role
+            # Name: StormTroopers-Project2-Role
+          ImageId: ami-02396cdd13e9a1257
+          InstanceInitiatedShutdownBehavior: stop
+          InstanceType: t3.micro
+          SecurityGroupIds: 
+          - !Ref AppInstanceSecurityGroup
+          UserData:
+          # https://catalog.workshops.aws/cfn101/en-US/basics/operations/user-data
+            Fn::Base64: |
+              #!/bin/bash
+              sudo yum update -y
+              sudo yum python install -y
+              python -m venv webapp
+              source webapp/bin/activate
+              cd webapp
+              s3 cp from bucket ----- webapp.zip
+              unzip webapp.zip
+              python -m pip install -r requirements.txt -t .
+              sudo python main.py
 
-# # Auto Scaling Group
-# # 
-# # 
-#   Type: AWS::AutoScaling::AutoScalingGroup
-# Properties: 
-#   AutoScalingGroupName: StormTrooperASG
-#   AvailabilityZones: !ref
-#   # CapacityRebalance: Boolean
-#   Context: String
-#   Cooldown: 300
-#   DefaultInstanceWarmup: 0
-#   DesiredCapacity: 2
-#   DesiredCapacityType: 2
-#   HealthCheckGracePeriod: 60
-#   HealthCheckType: EC2
-#   # InstanceId: String
-#   # LaunchConfigurationName: String
-#   LaunchTemplate: 
-#     !ref StormTrooper-LT
-#   # LifecycleHookSpecificationList: 
-#   #   - LifecycleHookSpecification
-#   LoadBalancerNames: 
-#     !Ref StormTrooper-LB
-#   # MaxInstanceLifetime: Integer
-#   MaxSize: 4
-#   # MetricsCollection: 
-#   #   - MetricsCollection
-#   MinSize: 2
-#   # MixedInstancesPolicy: 
-#   #   MixedInstancesPolicy
-#   NewInstancesProtectedFromScaleIn: Boolean
-#   # NotificationConfigurations: 
-#   #   - NotificationConfiguration
-#   # PlacementGroup: String
-#   # ServiceLinkedRoleARN: String
-#   Tags: 
-#     Key: Name
-#     Value: ASG-ST
-#   TargetGroupARNs: 
-#     - String
-#   # TerminationPolicies: 
-#   #   - String
-#   # VPCZoneIdentifier: 
-#   #   - String
+# Provides information reguarding the passrole policy. This policy is necessary to allow a service to
+# pass IAM permissions to another service.
+  # https://blog.rowanudell.com/iam-passrole-explained/
+  # https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_examples_iam-passrole-service.html?ref=blog.rowanudell.com
+  StormTroopersAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties: 
+      AutoScalingGroupName: StormTroopersASG  
+      Cooldown: 60
+      DefaultInstanceWarmup: 0
+      LaunchTemplate:
+        LaunchTemplateId: !Ref StormTroopersLaunchTemplate
+        Version: !GetAtt StormTroopersLaunchTemplate.LatestVersionNumber
+      MaxSize: '4'
+      MinSize: '2'
+      DesiredCapacity: '2'
+      LoadBalancerNames: 
+        - String
+      ServiceLinkedRoleARN: arn:aws:iam::176906365059:instance-profile/StormTroopers-Project2-Role
+      # arn:aws:iam::176906365059:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling_stormtroopers
+      TargetGroupARNs: 
+        - !Ref StormTroopersTargetGroup
+      TerminationPolicies: 
+        - String
+      VPCZoneIdentifier: 
+        - !Ref AppSubnet1
+        - !Ref AppSubnet2
+
+  StormTroopersTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties: 
+      HealthCheckEnabled: True
+      HealthCheckIntervalSeconds: 60
+      HealthCheckPath: '/'
+      HealthCheckPort: '80'
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 30
+      HealthyThresholdCount: 5
+      IpAddressType: ipv4
+      Matcher: 
+        HttpCode: '200'
+      Name: StormTroopersASGTargetGroup
+      Port: 80
+      Protocol: HTTP
+      ProtocolVersion: HTTP1
+      TargetType: instance
+      VpcId: !Ref STVPC
+
+  StormTroopersLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties: 
+      IpAddressType: ipv4
+      Name: StormTroopersALB
+      Scheme: internet-facing
+      Subnets:  
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Type: application
+
+# Not sure this is necessary at this stage. Theorize this is necessary to give cloudformation permissions.
+  StormTroopersIAMPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: StormTroopers-Project2-Role
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: '*'
+            Resource: '*'
+      Roles:
+        - !Ref StormTroopers-Project2-Role
 
 
-# # Load Balancer
-# Type: AWS::ElasticLoadBalancing::LoadBalancer
-# Properties: 
-#   # AccessLoggingPolicy: 
-#   #   AccessLoggingPolicy
-#   # AppCookieStickinessPolicy: 
-#   #   - AppCookieStickinessPolicy
-#   # AvailabilityZones: 
-#   #   - String
-#   # ConnectionDrainingPolicy: 
-#   #   ConnectionDrainingPolicy
-#   # ConnectionSettings: 
-#   #   ConnectionSettings
-#   # CrossZone: Boolean
-#   # HealthCheck: 
-#   # #   HealthCheck
-#   # Instances: 
-#   #   - String
-#   # LBCookieStickinessPolicy: 
-#   #   - LBCookieStickinessPolicy
-#   Listeners: 
-#       InstancePort: 80
-#       InstanceProtocol: HTTP
-#       LoadBalancerPort: 80
-#       # PolicyNames: 
-#       #  - String
-#       Protocol: TCP
-#       # SSLCertificateId: String
 
-#   LoadBalancerName: StormTrooper-LB
-#   # Policies: 
-#   #   - Policies
-#   Scheme: internet-facing
-#   SecurityGroups: 
-#     !ref AppInstanceSecurityGroup
-#   Subnets: 
-#     !ref AppSubnet1Param
-#     !ref AppSubnet2Param
-#   Tags: 
-#     Name: ALB-ST
+# AURORA DATABASE
+
 
 # # 
 # 
@@ -514,7 +511,7 @@ Outputs:
       Name: "EFSMountTargetSecurityGroupID"
 
   RDSSecurityGroupID:
-    Description: "The Security Group ID for the DynamoDB DB"
+    Description: "The Security Group ID for the Aurora DB"
     Value: !Ref RDSSecurityGroup
     Export:
       Name: "RDSSecurityGroupID"
